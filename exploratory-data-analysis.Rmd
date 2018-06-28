@@ -1,0 +1,281 @@
+---
+title: "Exploratory Data Analysis"
+author: "JJC"
+subtitle: Motor Trends Project
+output:
+  pdf_document:
+    highlight: tango
+    number_sections: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+options(digits = 3)
+
+library(data.table)
+```
+
+# Reflect on the Research Question 
+1.  "Is an automatic or manual transmission better for MPG"
+2.  "How different is the MPG between automatic and manual transmission?"
+
+In question 1, there is a comparison between a categorical variable (transmission) and the effect on response variable (MPG).  "better" in this context means higher miles per gallon.
+
+Question 2 calls for a quantitative comparision between the two transmission categories.  
+
+## Data Narrative
+
+### Univariable numerical summaries
+```{r}
+t_count <- 1
+```
+_Table `r t_count`. Types of variables._  
+Inspect first 6 observations to determine types of variables and their values.
+```{r univariate, echo = FALSE}
+apply(mtcars, 2, class)
+```
+
+* Convert categorical variables to factor.
+```{r}
+t_count <- t_count + 1
+```
+_Table `r t_count`. Quartile summaries_  
+Quartile summaries for _mpg_:
+```{r cast am}
+data(mtcars)
+mtcars <- data.table(mtcars)
+mtcars$am_f <- factor(mtcars$am,
+                      levels = c(0, 1),
+                      labels = c("auto", "manual"))
+mtcars$cyl <- as.factor(mtcars$cyl)
+mtcars$vs <- as.factor(mtcars$vs)
+mtcars$gear <- as.factor(mtcars$gear)
+mtcars$carb <- as.factor(mtcars$carb)
+summary(mtcars$mpg)
+```
+
+Counts for each transmission type:
+```{r}
+am_mx <- t( as.matrix(table(mtcars$am)) )
+colnames(am_mx) <- c("auto", "manual")
+rownames(am_mx) <- ""
+am_mx
+```
+
+### Distribution of Response Variable
+Linear regression requires that the mean of the response is normal.
+```{r mpg histogram, fig.align="left"}
+# ref: Kabacoff, R in Action, pg 125
+
+x <- mtcars$mpg
+h <- hist(x, breaks = 12,
+        col = "red",
+        xlab = "mpg", 
+        main = "Figure 1. Histogram of mpg with Normal curve")
+xfit <- seq(min(x), max(x), length = 40)
+yfit <- dnorm(xfit, mean = mean(x), sd = sd(x))
+yfit <- yfit * diff(h$mids[1:2]) * length(x)
+lines(xfit, yfit, col = "blue", lwd = 2)
+box()
+
+```
+
+By superimposing a normal curve, figure 1 shows that the distribution of mpg values is approximately normal. 
+
+### Bivariate associations
+
+__Numeric Variables__  
+1. Correlation with respect to _mpg_
+```{r correlations}
+x <- mtcars[, c("disp", "hp", "drat", "wt", "qsec")]
+y <- mtcars[, c("mpg")]
+cor_mx <- cor(x, y)
+colnames(cor_mx) <- "mpg"
+cor_mx
+```
+Three variables (_disp_, _hp_ and _wt_) have high negative correlation with _mpg_.  So the more the powerful engine and the heavier the car leads to lower fuel efficiency. _qsec_ has only moderate positive correlation with mpg and so, it does not appear in figure 2. The canon for high correlation here is an absolute value greater than 0.75. 
+
+2. Scatterplots
+
+```{r}
+num_measures <-  mtcars[, c("disp", "hp", "drat", "wt", "mpg", "am")]
+
+## put histograms on the diagonal
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = "blue", ...)
+}
+
+pairs( ~ disp + hp + drat + wt + mpg, data = mtcars,
+       main = "Figure 2. Motor Trends Measures - 2 transmission types",
+      pch = 21, bg = c("red", "green3")[unclass(mtcars$am)],
+      cex = 1.5, 
+      upper.panel = NULL, 
+      diag.panel = panel.hist, cex.labels = 2)
+legend("topright", legend = c("manual", "auto"),
+       col = c("red", "green3"),
+       text.col = c("red", "green3"), pch = c(16, 16),
+       merge = FALSE, bg = "gray90")
+```
+* In figure 2, the lowest row confirms the correlation between _mpg_ and the four numerical explanatory variables.  
+* Automatic transmission (green points) tends to have miles per gallon except for the _drat_ measure.
+* Note that here is high correlation between the explanatory variables themselves.  So checking for multicollinearity in linear regression diagnostics is important.  
+3. Correlation
+
+```{r}
+library(corrplot)
+
+cor_mx <- cor(num_measures)
+cor_mx
+corrplot(cor_mx)
+
+cor(mtcars$wt, mtcars$disp)
+```
+high correlation between wt and disp
+
+__Categorical Variables__
+
+Check transmission groups by wt and by disp
+
+```{r}
+par(mfrow = c(1, 2))
+boxplot(wt ~ am_f, data = mtcars,
+        xlab= "Transmission type",
+        ylab = "weight 1000 lbs",
+        main = "Figure 3  Weight by Transmission Groups")
+boxplot(disp ~ am_f, data = mtcars,
+        xlab= "Transmission type",
+        ylab = "Displ cu.in",
+        main = "Figure 4  Displ by Transmission Groups")
+
+par(mfrow=c(1, 1))
+```
+
+
+Figure 3 orders each car model by fuel mileage for the two transmission groups.  Again, the _auto_ group has higher _mpg_.  However, there is crossover between the two groups where models have similar mileage values. 
+
+```{r}
+x <- mtcars[order(mtcars$mpg), ]
+x$am <- factor(x$am, labels = c("manual", "auto"))
+
+x$colour[x$am == "manual"] <- "red"
+x$colour[x$am == "auto"] <- "green3"
+dotchart(x$mpg,
+         labels = rownames(x),
+         cex = 0.7,
+         groups = x$am,
+         gcolor = "black",
+         color = x$colour,
+         pch = 19,
+         main = "Figure 3, Car mileage for two transmission categories.",
+         xlab = "Miles per Gallon"
+)
+
+```
+
+Question 1 asks if one group is "better". This seeks to determine if the mean of one group is significantly higher than the other.  One solution is to perform a single-tail t-test.
+
+### Assumptions for t-test
+1. __Independent Sample__  
+Differentiating by transmission category results in two independent samples since the manual group does not effect the automatic group.  
+2. __Independent Observations__  
+The selection of one car model does not effect the selection of another model.
+3. __Normality Assumption__  
+Figure 2 shows that the manual group has a normal distribution.  However,  the automatic group has right skew.  Also, it only contains 13 observations.  
+```{r}
+t_count <- 1
+```
+  
+**Table `r t_count`. _mpg_ numeric summaries by transmission group.**
+```{r mpg numerical summary, results='asis'}
+library(kableExtra)
+options(digits = 3)
+mpg_mx <- matrix( c(mtcars[am == 0,
+                           c(.N, mean(mpg), sd(mpg), min(mpg), max(mpg))]),
+                  nrow = 1, ncol = 5)
+mpg_mx <- rbind(mpg_mx, mtcars[am == 1, c(.N, mean(mpg), sd(mpg),
+                                           min(mpg), max(mpg))] )
+
+colnames(mpg_mx) <- c("n", "mean", "sd", "min", "max")
+rownames(mpg_mx) <- c("manual", "auto")
+mpg_mx %>%
+  kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", full_width = F,
+                                      font_size = 12))
+
+```
+
+However, Table `r t_count` shows that both groups are within 2.5 times standard deviation of the mean.  This suggests that a t-test is valid with a caveat about the distribution of the _am_ group.
+
+For question 2, a linear model with a single categorical regressor variable would quantify the difference between the two transmission categories.  It would be worth comparing a model with only _am_ as regressor to a model with _am_ that accounts for all the other numeric variables. Accounting for the remaining categorical variables would require too many comparisons due to the number of levels involved. 
+
+### mpg and binary categorical variables
+
+t-test, Independent Samples
+mpg by transmission category
+```{r}
+attach(mtcars)
+mpg_a <- mtcars$mpg[am_f == "auto"]
+mpg_m <- mtcars$mpg[am_f == "manual"]
+t.test( mpg_m, mpg_a)
+
+```
+
+mpg by vs
+
+```{r}
+mpg_vs0 <- mtcars$mpg[vs == 0]
+mpg_vs1 <- mtcars$mpg[vs == 1]
+t.test( mpg_vs0, mpg_vs1)
+```
+
+### mpg by multi-level categorical variables using ANOVA
+
+mpg and cyl 
+
+```{r}
+# Grouped Box Plot
+boxplot(mpg ~ cyl, main='mpg by number of cyls',
+        xlab='cyl', ylab='mpg')
+
+# Analyse Data
+aggregate(mpg ~ cyl, mtcars, mean)
+
+# Check variances assumption
+aggregate(mpg ~ cyl, mtcars, sd)
+
+# Run ANOVA
+cyl_aov <- aov(mpg ~ cyl)
+summary(cyl_aov)
+
+# Post hoc tests
+TukeyHSD(cyl_aov)
+```
+
+mpg and carb
+
+```{r}
+# Grouped Box Plot
+boxplot(mpg ~ carb, main='mpg by number of carbs',
+        xlab='carb', ylab='mpg')
+mtcars$mpg[carb == 8]
+# Analyse Data
+aggregate(mpg ~ carb, mtcars, mean)
+
+# Check variances assumption
+aggregate(mpg ~ carb, mtcars, sd)
+
+# Run ANOVA
+carb_aov <- aov(mpg ~ carb)
+summary(carb_aov)
+
+# Post hoc tests
+TukeyHSD(carb_aov)
+```
+
